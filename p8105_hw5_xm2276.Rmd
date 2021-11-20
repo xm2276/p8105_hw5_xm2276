@@ -2,7 +2,140 @@
 title: "p8105_hw5_xm2276"
 author: "XIAO MA"
 date: "11/20/2021"
-output: html_document
+output: github_document
 ---
 
+```{r setup, message=FALSE}
+library(tidyverse)
+library(rvest)
+library(knitr)
+library(ggplot2)
+theme_set(theme_minimal() +  theme(legend.position = "bottom"))
+
+options(
+  ggplots2.continuous.color = "viridis",
+  ggplots2.continuous.fill = "viridus"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+
+# Problem 1
+```{r}
+homicide_url = "https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv"
+homicide_df = read_csv(homicide_url)
+```
+
+The dimention of the data is `r dim(homicide_df)`
+
+
+
+```{r}
+city_state_homi = homicide_df %>% 
+  unite(city_state, c("city", "state"), sep = ", ") %>% 
+  group_by(city_state) %>% 
+  summarize(total_homic = n(),
+            total_unsolved = sum(disposition %in% c("Closed without arrest", "Open/No arrest")))
+
+knitr::kable(city_state_homi)
+
+```
+
+```{r, warning = FALSE}
+balti = city_state_homi %>% 
+	  filter(city_state == "Baltimore, MD") 
+prop_test_balti = 
+	  prop.test(x = pull(balti, total_unsolved),
+	            n = pull(balti, total_homic)) %>% 
+	  broom::tidy() %>% 
+	  select(estimate, conf.low, conf.high)
+	
+	
+homicide_cities =
+  city_state_homi %>% 
+  mutate(prop_test = map2(.x = total_unsolved, .y = total_homic, 
+                          ~prop.test(x = .x, n = .y)),
+         tidy_test = map(.x = prop_test, ~broom::tidy(.x))) %>% 
+  select(-prop_test) %>% 
+  unnest(tidy_test) %>%
+  select(city_state, estimate, conf.low, conf.high)
+
+
+homicide_cities %>% 
+  mutate(city_state = fct_reorder(city_state,estimate)) %>%
+  ggplot(aes(x = city_state, 
+             y = estimate)) + 
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  coord_flip() +
+   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5))
+```
+
+
+
+
+# Problem 2
+```{r}
+data_p2 = str_c("data/", list.files(path = "data/."))
+
+
+data_p2_tidy = tibble(path = list.files("data/.")) %>% 
+	  mutate(
+	    path = str_c("data/.", path),
+	    data = purrr::map(data_p2, ~ read_csv(.x))) %>% 
+	    unnest(data) %>% 
+	  separate(path, into = c("path", "other"), sep = "/") %>% 
+	  separate(other, into = c("arm", "rest"), sep = "_") %>% 
+	  separate(rest, into = c("subject_ID", "remain"), sep = 2) %>% 
+	  select(-path, -remain) %>% 
+	    pivot_longer(
+	    week_1:week_8,
+	    names_to = "time",
+	    values_to = "observations"
+	    ) %>% 
+	  mutate(
+	    arm = str_replace(arm, "con", "control"),
+	    arm = str_replace(arm, "exp", "experimental")
+	  ) %>% 
+	  separate(time, into = c("name", "week"), sep = "_") %>% 
+	  select(-name)
+
+
+#get the plot
+data_p2_tidy %>% 
+	 ggplot(aes(x = week, y = observations, group = subject_ID, color = factor(subject_ID))) +
+	  facet_grid(. ~ arm) +
+   geom_path(alpha = 0.7) + 
+  geom_point(alpha = 0.7) +
+	  geom_line() 
+```
+# From the plots, both the control and the experiment group are ups and downs. From the overall trend, the viberation of observations of control group are between -2.5 to 4, which does not change too much. But for the experimental group, observations are increasing over time.
+
+
+
+
+
+# Problem 3
+```{r}
+set.seed(10)
+
+iris_with_missing = iris %>% 
+  map_df(~replace(.x, sample(1:150, 20), NA)) %>%
+  mutate(Species = as.character(Species))
+
+replace_func = function(x) {
+  if (is.numeric(x)) {
+   x = replace_na(x, mean(x, na.rm = TRUE))
+    }
+  else if (is.character(x)) {
+    x = replace_na(x, "virginica")
+  }
+}
+iris_with_missing_replace = map(iris_with_missing, replace_func)
+iris = iris_with_missing_replace %>% 
+  as_tibble()
+iris
+```
 
